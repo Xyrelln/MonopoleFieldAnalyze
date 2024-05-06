@@ -84,3 +84,53 @@ def sample_arc(center, radius, azimuth_angle, space_shape):
             space[x, y, z] = True
 
     return np.transpose(np.nonzero(space))
+
+
+def create_filled_circle(center, radius, space_shape):
+    cx, cy, cz = center
+    # Prepare lists to store coordinates
+    x_coords = []
+    y_coords = []
+    z_coords = []
+
+    # Iterate over a grid that bounds the circle
+    for x in range(cx - radius, cx + radius + 1):
+        for y in range(cy - radius, cy + radius + 1):
+            if (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2:
+                x_coords.append(x)
+                y_coords.append(y)
+                z_coords.append(cz)  # z-coordinates remain constant
+
+    x_coords = np.array(x_coords)
+    y_coords = np.array(y_coords)
+    z_coords = np.array(z_coords)
+
+    mask = (x_coords >= 0) & (x_coords < space_shape[0]) & \
+           (y_coords >= 0) & (y_coords < space_shape[1]) & \
+           (z_coords >= 0) & (z_coords < space_shape[2])
+
+    return x_coords[mask], y_coords[mask], z_coords[mask]
+
+def cal_interference(field_exp, center, radius, space_shape):
+    '''
+    Calculate the curent setup's interference with an imaginary anti wave with field flipped by x-axis
+    :param field_exp: Field instance to be calculated
+    :param center: observer center coordinates
+    :param radius: observer radius
+    :param space_shape: shape of field instance
+    :return: complex sum observed, complex raw matrix observed, complex positive field observed, complex negative field observed
+    '''
+    x_coords, y_coords, z_coords = create_filled_circle(center, radius, space_shape)
+    result_cache = np.zeros((radius*2+1, radius*2+1), dtype=complex)
+    inverted_result_cache = np.zeros((radius*2+1, radius*2+1), dtype=complex)
+    for i in tqdm(range(len(x_coords))):
+        single = field_exp.cal_sound_pressure(x_coords[i], y_coords[i], z_coords[i])
+        result_cache[x_coords[i] - (center[0]-radius)][y_coords[i] - (center[1]-radius)] = single
+        single_inverted = field_exp.cal_sound_pressure(x_coords[i], y_coords[i], z_coords[i], np.pi)
+        inverted_result_cache[x_coords[i] - (center[0]-radius)][y_coords[i] - (center[1]-radius)] = single_inverted
+    no_int = result_cache  # not interfered positive wave
+    no_int_inverted = inverted_result_cache  # not interfered negative wave
+    no_int_inverted = np.flip(no_int_inverted, axis=0)  # flip by x-axis
+    result = np.sum(no_int + no_int_inverted)  # complex sum
+    result_cache = no_int + no_int_inverted  # complex field
+    return result, result_cache, no_int, no_int_inverted
